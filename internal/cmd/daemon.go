@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -192,6 +193,14 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	daemonCmd.Stdin = nil
 	daemonCmd.Stdout = nil
 	daemonCmd.Stderr = nil
+	// On Windows, fully detach child so it survives the parent's exit
+	// without flashing a visible console window.
+	if runtime.GOOS == "windows" {
+		const CREATE_NO_WINDOW = 0x08000000
+		daemonCmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
+		}
+	}
 
 	if err := daemonCmd.Start(); err != nil {
 		return fmt.Errorf("starting daemon: %w", err)

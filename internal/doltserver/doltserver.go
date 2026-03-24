@@ -509,6 +509,27 @@ func countDoltDatabases(dataDir string) int {
 }
 
 // IsRunning checks if a Dolt server is running for the given town.
+// processIsAlive checks whether a process with the given PID is still running.
+// On Unix, uses Signal(0). On Windows, opens the process handle via OpenProcess.
+func processIsAlive(pid int) bool {
+	if runtime.GOOS == "windows" {
+		// On Windows, os.FindProcess always succeeds. Open the process handle
+		// to verify it exists. We use the syscall directly for a lightweight check.
+		const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+		h, err := syscall.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+		if err != nil {
+			return false
+		}
+		syscall.CloseHandle(h)
+		return true
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return process.Signal(syscall.Signal(0)) == nil
+}
+
 // Returns (running, pid, error).
 // Checks both PID file AND port to detect externally-started servers.
 // For remote servers, skips PID/port scan and just does TCP reachability.
@@ -532,18 +553,14 @@ func IsRunning(townRoot string) (bool, int, error) {
 		pid, err := strconv.Atoi(pidStr)
 		if err == nil {
 			// Check if process is alive
-			process, err := os.FindProcess(pid)
-			if err == nil {
-				// On Unix, FindProcess always succeeds. Send signal 0 to check if alive.
-				if err := process.Signal(syscall.Signal(0)); err == nil {
-					// Verify it's actually serving on the expected port.
-					// More reliable than ps string matching (ZFC fix: gt-utuk).
-					if isDoltServerOnPort(config.Port) {
-						if doltProcessMatchesTown(townRoot, pid, config) {
-							return true, pid, nil
-						}
-						// Port served by a different town's Dolt — fall through to stale cleanup
+			if processIsAlive(pid) {
+				// Verify it's actually serving on the expected port.
+				// More reliable than ps string matching (ZFC fix: gt-utuk).
+				if isDoltServerOnPort(config.Port) {
+					if doltProcessMatchesTown(townRoot, pid, config) {
+						return true, pid, nil
 					}
+					// Port served by a different town's Dolt — fall through to stale cleanup
 				}
 			}
 		}
@@ -1055,15 +1072,15 @@ func KillImposters(townRoot string) error {
 		return fmt.Errorf("finding imposter process %d: %w", pid, err)
 	}
 
-	// SIGTERM first, then SIGKILL
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("sending SIGTERM to imposter PID %d: %w", pid, err)
+	// Terminate first, then force kill
+	if err := process.Kill(); err != nil {
+		return fmt.Errorf("sending termination signal to imposter PID %d: %w", pid, err)
 	}
 
 	// Wait for graceful shutdown
 	for i := 0; i < 10; i++ {
 		time.Sleep(500 * time.Millisecond)
-		if err := process.Signal(syscall.Signal(0)); err != nil {
+		if !processIsAlive(pid) {
 			// Clean up PID file if it pointed to the imposter
 			_ = os.Remove(config.PidFile)
 			return nil
@@ -1071,7 +1088,7 @@ func KillImposters(townRoot string) error {
 	}
 
 	// Force kill
-	_ = process.Signal(syscall.SIGKILL)
+	_ = process.Kill()
 	time.Sleep(100 * time.Millisecond)
 	_ = os.Remove(config.PidFile)
 
@@ -1166,18 +1183,18 @@ func StopIdleMonitors(townRoot string) int {
 		if err != nil {
 			continue
 		}
-		if err := proc.Signal(syscall.SIGTERM); err != nil {
+		if err := proc.Kill(); err != nil {
 			continue
 		}
 
 		// Wait briefly for termination
 		for i := 0; i < 5; i++ {
 			time.Sleep(100 * time.Millisecond)
-			if err := proc.Signal(syscall.Signal(0)); err != nil {
+			if !processIsAlive(pid) {
 				break // Process exited
 			}
 			if i == 4 {
-				_ = proc.Signal(syscall.SIGKILL)
+				_ = proc.Kill()
 			}
 		}
 		stopped++
@@ -1297,7 +1314,7 @@ behavior:
 		maxConnLine,
 		readTimeoutLine,
 		writeTimeoutLine,
-		config.DataDir,
+		filepath.ToSlash(config.DataDir),
 	)
 
 	return os.WriteFile(configPath, []byte(content), 0600)
@@ -1393,9 +1410,9 @@ func Start(townRoot string) error {
 		if squatterPID := findDoltServerOnPort(config.Port); squatterPID > 0 {
 			fmt.Fprintf(os.Stderr, "Warning: port %d held by unowned dolt process (PID %d) — killing before start\n", config.Port, squatterPID)
 			if proc, findErr := os.FindProcess(squatterPID); findErr == nil {
-				_ = proc.Signal(syscall.SIGTERM)
+				_ = proc.Kill()
 				if err := waitForPortRelease(config.Port, 5*time.Second); err != nil {
-					// SIGTERM didn't work, escalate to SIGKILL
+					// Kill didn't work, try again
 					_ = proc.Kill()
 					if err := waitForPortRelease(config.Port, 3*time.Second); err != nil {
 						fmt.Fprintf(os.Stderr, "Warning: port %d still occupied after killing PID %d: %v\n", config.Port, squatterPID, err)
@@ -1644,8 +1661,8 @@ func Start(townRoot string) error {
 		time.Sleep(500 * time.Millisecond)
 
 		// Check if the process we started is still alive.
-		if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
-			return fmt.Errorf("Dolt server process died during startup (check logs with 'gt dolt logs'): %w", err)
+		if !processIsAlive(cmd.Process.Pid) {
+			return fmt.Errorf("Dolt server process died during startup (check logs with 'gt dolt logs')")
 		}
 
 		if err := CheckServerReachable(townRoot); err == nil {
@@ -1739,24 +1756,23 @@ func Stop(townRoot string) error {
 		return fmt.Errorf("finding process: %w", err)
 	}
 
-	// Send SIGTERM for graceful shutdown
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("sending SIGTERM: %w", err)
+	// Send termination signal for graceful shutdown
+	if err := process.Kill(); err != nil {
+		return fmt.Errorf("sending termination signal: %w", err)
 	}
 
 	// Wait for graceful shutdown (dolt needs more time)
 	for i := 0; i < 10; i++ {
 		time.Sleep(500 * time.Millisecond)
-		if err := process.Signal(syscall.Signal(0)); err != nil {
-			// Process has exited
+		if !processIsAlive(pid) {
 			break
 		}
 	}
 
 	// Check if still running
-	if err := process.Signal(syscall.Signal(0)); err == nil {
+	if processIsAlive(pid) {
 		// Still running, force kill
-		_ = process.Signal(syscall.SIGKILL)
+		_ = process.Kill()
 		time.Sleep(100 * time.Millisecond)
 	}
 

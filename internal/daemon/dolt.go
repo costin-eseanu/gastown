@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -913,6 +914,10 @@ func (m *DoltServerManager) captureGoroutineDump() {
 		return
 	}
 	m.logger("Capturing goroutine dump from Dolt server (PID %d) before restart...", pid)
+	if runtime.GOOS == "windows" {
+		m.logger("Goroutine dump via SIGQUIT not supported on Windows, skipping")
+		return
+	}
 	if err := process.Signal(syscall.SIGQUIT); err != nil {
 		m.logger("Warning: failed to send SIGQUIT for goroutine dump: %v", err)
 		return
@@ -1452,25 +1457,24 @@ func StopAllDoltServers(force bool) (int, int) {
 	}
 	before := len(pids)
 
-	sig := syscall.SIGTERM
-	if force {
-		sig = syscall.SIGKILL
-	}
-
 	for _, pid := range pids {
 		if p, err := os.FindProcess(pid); err == nil {
-			_ = p.Signal(sig)
+			if force {
+				_ = sendKillSignal(p)
+			} else {
+				_ = sendTermSignal(p)
+			}
 		}
 	}
 
 	if !force {
 		time.Sleep(2 * time.Second)
-		// Check if any survived, escalate to SIGKILL.
+		// Check if any survived, escalate to kill.
 		remaining := doltserver.FindAllDoltListeners()
 		if len(remaining) > 0 {
 			for _, l := range remaining {
 				if p, err := os.FindProcess(l.PID); err == nil {
-					_ = p.Signal(syscall.SIGKILL)
+					_ = sendKillSignal(p)
 				}
 			}
 		}

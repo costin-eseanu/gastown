@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,16 +71,27 @@ func validateCommandBinary(command string) error {
 		return nil
 	}
 
-	// Skip past "exec" and "env" prefixes, and KEY=VAL assignments.
+	// Skip past "exec" and "env" prefixes, KEY=VAL assignments,
+	// and PowerShell $env: assignments and call operator (&).
 	i := 0
 	for i < len(fields) {
 		f := fields[i]
-		if f == "exec" || f == "env" {
+		if f == "exec" || f == "env" || f == "&" {
 			i++
 			continue
 		}
+		// POSIX: KEY=VAL
 		if strings.Contains(f, "=") && !strings.HasPrefix(f, "/") && !strings.HasPrefix(f, "-") {
 			i++
+			continue
+		}
+		// PowerShell: $env:KEY='val'; (may span multiple fields if value has spaces)
+		if strings.HasPrefix(f, "$env:") {
+			i++
+			// Skip continuation fields until we see a semicolon-terminated one
+			for i < len(fields) && !strings.HasSuffix(fields[i-1], ";") {
+				i++
+			}
 			continue
 		}
 		break
@@ -322,15 +334,24 @@ func (t *Tmux) NewSessionWithCommand(name, workDir, command string) error {
 	// Enable remain-on-exit BEFORE command runs so we can inspect exit status
 	_, _ = t.run("set-option", "-t", name, "remain-on-exit", "on")
 
-	// Replace the initial shell with the actual command
-	respawnArgs := []string{"respawn-pane", "-k", "-t", name}
-	if workDir != "" {
-		respawnArgs = append(respawnArgs, "-c", workDir)
-	}
-	respawnArgs = append(respawnArgs, command)
-	if _, err := t.run(respawnArgs...); err != nil {
-		_ = t.KillSession(name)
-		return fmt.Errorf("failed to start command in session %q: %w", name, err)
+	// Replace the initial shell with the actual command.
+	// On Windows (psmux), respawn-pane doesn't support passing a command
+	// argument, so we use send-keys to type the command into the shell.
+	if runtime.GOOS == "windows" {
+		if _, err := t.run("send-keys", "-t", name, command, "Enter"); err != nil {
+			_ = t.KillSession(name)
+			return fmt.Errorf("failed to send command in session %q: %w", name, err)
+		}
+	} else {
+		respawnArgs := []string{"respawn-pane", "-k", "-t", name}
+		if workDir != "" {
+			respawnArgs = append(respawnArgs, "-c", workDir)
+		}
+		respawnArgs = append(respawnArgs, command)
+		if _, err := t.run(respawnArgs...); err != nil {
+			_ = t.KillSession(name)
+			return fmt.Errorf("failed to start command in session %q: %w", name, err)
+		}
 	}
 
 	return t.checkSessionAfterCreate(name, command)
@@ -395,15 +416,22 @@ func (t *Tmux) NewSessionWithCommandAndEnv(name, workDir, command string, env ma
 	// Enable remain-on-exit BEFORE command runs so we can inspect exit status
 	_, _ = t.run("set-option", "-t", name, "remain-on-exit", "on")
 
-	// Replace the initial shell with the actual command
-	respawnArgs := []string{"respawn-pane", "-k", "-t", name}
-	if workDir != "" {
-		respawnArgs = append(respawnArgs, "-c", workDir)
-	}
-	respawnArgs = append(respawnArgs, command)
-	if _, err := t.run(respawnArgs...); err != nil {
-		_ = t.KillSession(name)
-		return fmt.Errorf("failed to start command in session %q: %w", name, err)
+	// Replace the initial shell with the actual command.
+	if runtime.GOOS == "windows" {
+		if _, err := t.run("send-keys", "-t", name, command, "Enter"); err != nil {
+			_ = t.KillSession(name)
+			return fmt.Errorf("failed to send command in session %q: %w", name, err)
+		}
+	} else {
+		respawnArgs := []string{"respawn-pane", "-k", "-t", name}
+		if workDir != "" {
+			respawnArgs = append(respawnArgs, "-c", workDir)
+		}
+		respawnArgs = append(respawnArgs, command)
+		if _, err := t.run(respawnArgs...); err != nil {
+			_ = t.KillSession(name)
+			return fmt.Errorf("failed to start command in session %q: %w", name, err)
+		}
 	}
 
 	return t.checkSessionAfterCreate(name, command)
@@ -967,12 +995,19 @@ func (t *Tmux) IsAvailable() bool {
 // Uses "=" prefix for exact matching, preventing prefix matches
 // (e.g., "gt-deacon-boot" won't match when checking for "gt-deacon").
 func (t *Tmux) HasSession(name string) (bool, error) {
-	_, err := t.run("has-session", "-t", "="+name)
+	// psmux (Windows tmux alternative) doesn't support the "=" exact-match
+	// prefix for session targets. Use the bare name on Windows.
+	target := "=" + name
+	if runtime.GOOS == "windows" {
+		target = name
+	}
+	_, err := t.run("has-session", "-t", target)
 	if err != nil {
-		if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrNoServer) {
-			return false, nil
-		}
-		return false, err
+		// has-session returns exit code 1 for "session not found".
+		// psmux returns exit code 1 with empty stderr, bypassing wrapError's
+		// string matching. Treat ANY has-session error as "not found" since
+		// the command only has two outcomes: exists (exit 0) or doesn't (exit 1).
+		return false, nil
 	}
 	return true, nil
 }
@@ -991,7 +1026,20 @@ func (t *Tmux) ListSessions() ([]string, error) {
 		return nil, nil
 	}
 
-	return strings.Split(out, "\n"), nil
+	var sessions []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// psmux ignores -F format and returns "name: N windows (created ...)"
+		// Extract just the session name before the colon.
+		if idx := strings.Index(line, ": "); idx > 0 {
+			line = line[:idx]
+		}
+		sessions = append(sessions, line)
+	}
+	return sessions, nil
 }
 
 // SessionSet provides O(1) session existence checks by caching session names.
@@ -2134,10 +2182,22 @@ func processMatchesNames(pid string, names []string) bool {
 
 // hasDescendantWithNames checks if a process has any descendant (child, grandchild, etc.)
 // matching any of the given names. Recursively traverses the process tree up to maxDepth.
-// Used when the pane command is a shell (bash, zsh) that launched an agent.
+// Used when the pane command is a shell (bash, zsh, pwsh) that launched an agent.
 func hasDescendantWithNames(pid string, names []string, depth int) bool {
 	const maxDepth = 10 // Prevent infinite loops in case of circular references
 	if len(names) == 0 || depth > maxDepth {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return hasDescendantWithNamesWindows(pid, names, depth)
+	}
+	return hasDescendantWithNamesPosix(pid, names, depth)
+}
+
+// hasDescendantWithNamesPosix uses pgrep to find child processes on Unix systems.
+func hasDescendantWithNamesPosix(pid string, names []string, depth int) bool {
+	const maxDepth = 10
+	if depth > maxDepth {
 		return false
 	}
 	// Use pgrep to find child processes
@@ -2309,12 +2369,24 @@ func (t *Tmux) GetEnvironment(session, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Output format: KEY=value
-	parts := strings.SplitN(out, "=", 2)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("unexpected environment format for %s: %q", key, out)
+	// psmux may return all environment variables instead of just the requested key.
+	// Parse line-by-line and find the matching KEY=value line.
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 && parts[0] == key {
+			return parts[1], nil
+		}
 	}
-	return parts[1], nil
+	// Fallback: if only one line, use it directly (standard tmux behavior)
+	parts := strings.SplitN(strings.TrimSpace(out), "=", 2)
+	if len(parts) == 2 && parts[0] == key {
+		return parts[1], nil
+	}
+	return "", fmt.Errorf("environment variable %s not found in session %s", key, session)
 }
 
 // SetGlobalEnvironment sets an environment variable in the tmux global environment.
@@ -2330,12 +2402,14 @@ func (t *Tmux) GetGlobalEnvironment(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Output format: KEY=value
-	parts := strings.SplitN(out, "=", 2)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("unexpected global environment format for %s: %q", key, out)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 && parts[0] == key {
+			return parts[1], nil
+		}
 	}
-	return parts[1], nil
+	return "", fmt.Errorf("global environment variable %s not found", key)
 }
 
 // GetAllEnvironment returns all environment variables for a session.
@@ -2456,7 +2530,14 @@ func (t *Tmux) IsRuntimeRunning(session string, processNames []string) bool {
 
 	// ZFC: check declared pane identity set at session startup (gt-qmsx).
 	if declaredPane, err := t.GetEnvironment(session, "GT_PANE_ID"); err == nil && declaredPane != "" {
-		return t.checkTargetPaneForRuntime(declaredPane, processNames)
+		if t.checkTargetPaneForRuntime(declaredPane, processNames) {
+			return true
+		}
+		// On Windows (psmux), pane IDs like %1 may not be supported by
+		// display-message. Fall through to legacy path instead of returning false.
+		if runtime.GOOS != "windows" {
+			return false
+		}
 	}
 
 	// Legacy fallback: check first window, then scan all panes.
@@ -3086,6 +3167,14 @@ func (t *Tmux) SetMailClickBinding(session string) error {
 // This is used for "hot reload" of agent sessions - instantly restart in place.
 // The pane parameter should be a pane ID (e.g., "%0") or session:window.pane format.
 func (t *Tmux) RespawnPane(pane, command string) error {
+	if runtime.GOOS == "windows" {
+		// psmux: respawn-pane -k kills the process, then send-keys types the command.
+		if _, err := t.run("respawn-pane", "-k", "-t", pane); err != nil {
+			return err
+		}
+		_, err := t.run("send-keys", "-t", pane, command, "Enter")
+		return err
+	}
 	_, err := t.run("respawn-pane", "-k", "-t", pane, command)
 	return err
 }
@@ -3094,6 +3183,19 @@ func (t *Tmux) RespawnPane(pane, command string) error {
 // in the specified working directory. Use this when the pane's current working
 // directory may have been deleted.
 func (t *Tmux) RespawnPaneWithWorkDir(pane, workDir, command string) error {
+	if runtime.GOOS == "windows" {
+		if _, err := t.run("respawn-pane", "-k", "-t", pane); err != nil {
+			return err
+		}
+		// Change directory first if needed, then run command
+		if workDir != "" {
+			cdCmd := fmt.Sprintf("Set-Location %s; %s", psQuoteValue(workDir), command)
+			_, err := t.run("send-keys", "-t", pane, cdCmd, "Enter")
+			return err
+		}
+		_, err := t.run("send-keys", "-t", pane, command, "Enter")
+		return err
+	}
 	args := []string{"respawn-pane", "-k", "-t", pane}
 	if workDir != "" {
 		args = append(args, "-c", workDir)
@@ -3101,6 +3203,11 @@ func (t *Tmux) RespawnPaneWithWorkDir(pane, workDir, command string) error {
 	args = append(args, command)
 	_, err := t.run(args...)
 	return err
+}
+
+// psQuoteValue quotes a value for PowerShell single-quoted strings.
+func psQuoteValue(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 // ClearHistory clears the scrollback history buffer for a pane.

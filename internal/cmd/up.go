@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -107,7 +108,13 @@ const maxConcurrentAgentStarts = 10
 
 // daemonStartupGrace is how long to wait after spawning the daemon process
 // before verifying it started. The daemon needs time to write its PID file.
-const daemonStartupGrace = 300 * time.Millisecond
+// On Windows, DETACHED_PROCESS startup is slower so we allow extra time.
+var daemonStartupGrace = func() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 2 * time.Second
+	}
+	return 300 * time.Millisecond
+}()
 
 var upCmd = &cobra.Command{
 	Use:     "up",
@@ -536,6 +543,14 @@ func ensureDaemon(townRoot string) error {
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
+	// On Windows, fully detach child so it survives the parent's exit
+	// without flashing a visible console window.
+	if runtime.GOOS == "windows" {
+		const CREATE_NO_WINDOW = 0x08000000
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
+		}
+	}
 
 	if err := cmd.Start(); err != nil {
 		return err
