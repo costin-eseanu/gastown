@@ -252,6 +252,7 @@ func (m *DoltServerManager) buildDoltSQLCmd(ctx context.Context, args ...string)
 
 	fullArgs = append(fullArgs, args...)
 	cmd := exec.CommandContext(ctx, "dolt", fullArgs...)
+	setSysProcAttr(cmd)
 
 	// Always set cmd.Dir to DataDir — even for remote connections (GH#2537).
 	// Without this, dolt auto-creates .doltcfg/privileges.db in $CWD,
@@ -606,6 +607,7 @@ Action needed: Investigate and fix the root cause, then restart the daemon or th
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "gt", "mail", "send", "mayor/", "-s", subject, "-m", body) //nolint:gosec // G204: args are constructed internally
+		setSysProcAttr(cmd)
 		cmd.Dir = townRoot
 		cmd.Env = os.Environ()
 
@@ -685,6 +687,7 @@ func sendDoltAlertMail(townRoot, recipient, subject, body string, logger func(fo
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "gt", "mail", "send", recipient, "-s", subject, "-m", body) //nolint:gosec // G204: args are constructed internally
+	setSysProcAttr(cmd)
 	cmd.Dir = townRoot
 	cmd.Env = os.Environ()
 
@@ -1410,6 +1413,7 @@ func (m *DoltServerManager) getDoltVersion() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), doltCmdTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "dolt", "version")
+	setSysProcAttr(cmd)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

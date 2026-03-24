@@ -2227,6 +2227,7 @@ func (d *Daemon) emitMassDeathEvent() {
 // of crash detection rather than silently suppressing alerts.
 func (d *Daemon) isBeadClosed(beadID string) bool {
 	cmd := exec.Command(d.bdPath, "show", beadID, "--json") //nolint:gosec // G204: args are constructed internally
+	setSysProcAttr(cmd)
 	cmd.Dir = d.config.TownRoot
 	cmd.Env = os.Environ()
 
@@ -2281,8 +2282,9 @@ Restart deferred to stuck-agent-dog plugin for context-aware recovery.`,
 		polecatName, hookBead)
 
 	cmd := exec.Command(d.gtPath, "mail", "send", witnessAddr, "-s", subject, "-m", body) //nolint:gosec // G204: args are constructed internally
+	setSysProcAttr(cmd)
 	cmd.Dir = d.config.TownRoot
-	cmd.Env = append(os.Environ(), "BD_ACTOR=daemon") // Identify as daemon, not overseer
+	cmd.Env = append(os.Environ(), "BD_ACTOR=daemon")// Identify as daemon, not overseer
 	if err := cmd.Run(); err != nil {
 		d.logger.Printf("Warning: failed to notify witness of crashed polecat: %v", err)
 	}
@@ -2494,6 +2496,7 @@ func (d *Daemon) dispatchQueuedWork() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "gt", "scheduler", "run")
+	setSysProcAttr(cmd)
 	cmd.Dir = d.config.TownRoot
 	cmd.Env = append(os.Environ(), "GT_DAEMON=1", "BD_DOLT_AUTO_COMMIT=off")
 	out, err := cmd.CombinedOutput()
