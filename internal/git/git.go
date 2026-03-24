@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/util"
 )
 
 // GitError contains raw output from a git command for agent observation.
@@ -91,6 +93,7 @@ func (g *Git) run(args ...string) (string, error) {
 	}
 
 	cmd := exec.Command("git", args...)
+	util.SetProcessGroup(cmd)
 	if g.workDir != "" {
 		cmd.Dir = g.workDir
 	}
@@ -113,6 +116,7 @@ func (g *Git) runWithEnv(args []string, extraEnv []string) (_ string, _ error) {
 		args = append([]string{"--git-dir=" + g.gitDir}, args...)
 	}
 	cmd := exec.Command("git", args...)
+	util.SetProcessGroup(cmd)
 	if g.workDir != "" {
 		cmd.Dir = g.workDir
 	}
