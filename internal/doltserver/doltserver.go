@@ -77,7 +77,9 @@ func EnsureDoltIdentity() error {
 	// We read --global only (not repo-local) to avoid silently persisting
 	// a repo-scoped override into dolt's permanent global config.
 	if needName {
-		gitName, err := exec.Command("git", "config", "--global", "user.name").Output()
+		nameCmd := exec.Command("git", "config", "--global", "user.name")
+		setProcessGroup(nameCmd)
+		gitName, err := nameCmd.Output()
 		if err != nil || len(bytes.TrimSpace(gitName)) == 0 {
 			return fmt.Errorf("dolt identity not configured and git user.name not available; run: dolt config --global --add user.name \"Your Name\"")
 		}
@@ -87,7 +89,9 @@ func EnsureDoltIdentity() error {
 	}
 
 	if needEmail {
-		gitEmail, err := exec.Command("git", "config", "--global", "user.email").Output()
+		emailCmd := exec.Command("git", "config", "--global", "user.email")
+		setProcessGroup(emailCmd)
+		gitEmail, err := emailCmd.Output()
 		if err != nil || len(bytes.TrimSpace(gitEmail)) == 0 {
 			return fmt.Errorf("dolt identity not configured and git user.email not available; run: dolt config --global --add user.email \"you@example.com\"")
 		}
@@ -104,6 +108,7 @@ func EnsureDoltIdentity() error {
 // and (false, error) when dolt itself fails unexpectedly.
 func doltConfigMissing(key string) (bool, error) {
 	cmd := exec.Command("dolt", "config", "--global", "--get", key)
+	setProcessGroup(cmd)
 	out, err := cmd.Output()
 	if err == nil {
 		// Command succeeded — key exists if output is non-empty
@@ -121,8 +126,12 @@ func doltConfigMissing(key string) (bool, error) {
 // Uses --unset then --add to avoid duplicate entries from repeated calls.
 func setDoltGlobalConfig(key, value string) error {
 	// Remove existing value (ignore error — key may not exist yet)
-	_ = exec.Command("dolt", "config", "--global", "--unset", key).Run()
-	return exec.Command("dolt", "config", "--global", "--add", key, value).Run()
+	unsetCmd := exec.Command("dolt", "config", "--global", "--unset", key)
+	setProcessGroup(unsetCmd)
+	_ = unsetCmd.Run()
+	addCmd := exec.Command("dolt", "config", "--global", "--add", key, value)
+	setProcessGroup(addCmd)
+	return addCmd.Run()
 }
 
 // Default configuration
@@ -414,6 +423,7 @@ func buildDoltSQLCmd(ctx context.Context, config *Config, args ...string) *exec.
 	// .doltcfg/privileges.db files in the caller's CWD. Even TCP client
 	// connections can trigger .doltcfg creation if CWD is uncontrolled.
 	cmd.Dir = config.DataDir
+	setProcessGroup(cmd)
 
 	if config.IsRemote() && config.Password != "" {
 		cmd.Env = append(os.Environ(), "DOLT_CLI_PASSWORD="+config.Password)
@@ -745,6 +755,7 @@ func findDoltServerOnPort(port int) int {
 	// Without -sTCP:LISTEN, lsof returns client PIDs (e.g., gt daemon) first,
 	// which aren't dolt processes — causing false negatives.
 	cmd := exec.Command("lsof", "-i", fmt.Sprintf(":%d", port), "-sTCP:LISTEN", "-t")
+	setProcessGroup(cmd)
 	if output, err := cmd.Output(); err == nil {
 		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 		if len(lines) > 0 && lines[0] != "" {
@@ -757,6 +768,7 @@ func findDoltServerOnPort(port int) int {
 	// Fall back to ss (iproute2) — standard on modern Linux, no extra packages needed.
 	// Example output line: LISTEN 0 128 *:3307 *:* users:(("dolt",pid=12345,fd=7))
 	cmd = exec.Command("ss", "-tlnp", fmt.Sprintf("sport = :%d", port))
+	setProcessGroup(cmd)
 	if output, err := cmd.Output(); err == nil {
 		for _, line := range strings.Split(string(output), "\n") {
 			if idx := strings.Index(line, "pid="); idx >= 0 {
@@ -789,6 +801,7 @@ func FindAllDoltListeners() []DoltListener {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "lsof", "-a", "-c", "dolt", "-sTCP:LISTEN", "-i", "TCP", "-n", "-P", "-F", "pn")
+	setProcessGroup(cmd)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil
@@ -882,6 +895,7 @@ func getProcessArgs(pid int) []string {
 		return nil
 	}
 	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "args=")
+	setProcessGroup(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
@@ -898,6 +912,7 @@ func getProcessCWD(pid int) string {
 		}
 	case "darwin":
 		cmd := exec.Command("lsof", "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn")
+		setProcessGroup(cmd)
 		out, err := cmd.Output()
 		if err == nil {
 			for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -1130,7 +1145,9 @@ func StopIdleMonitors(townRoot string) int {
 		return 0
 	}
 
-	output, err := exec.Command("ps", "-eo", "pid,args").Output()
+	psCmd := exec.Command("ps", "-eo", "pid,args")
+	setProcessGroup(psCmd)
+	output, err := psCmd.Output()
 	if err != nil {
 		return 0
 	}
@@ -1690,6 +1707,7 @@ func cleanupStaleDoltLock(databaseDir string) error {
 
 	// Check if any process holds this file open using lsof
 	cmd := exec.Command("lsof", lockPath)
+	setProcessGroup(cmd)
 	_, err := cmd.Output()
 	if err != nil {
 		// lsof returns exit code 1 when no process has the file open
@@ -1729,6 +1747,7 @@ func cleanStaleSocket(socketPath string) {
 
 	// Check if any process holds the socket open
 	cmd := exec.Command("lsof", socketPath)
+	setProcessGroup(cmd)
 	if err := cmd.Run(); err != nil {
 		// lsof exit code 1 = no process holds it → stale, safe to remove
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
@@ -2248,6 +2267,7 @@ func InitRig(townRoot, rigName string) (serverWasRunning bool, created bool, err
 
 		cmd := exec.Command("dolt", "init")
 		cmd.Dir = rigDir
+		setProcessGroup(cmd)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return false, false, fmt.Errorf("initializing Dolt database: %w\n%s", err, output)
@@ -3285,6 +3305,7 @@ func GetActiveConnectionCount(townRoot string) (int, error) {
 	// Always set DOLT_CLI_PASSWORD to prevent interactive password prompt.
 	// When empty, dolt connects without a password (which is the default for local servers).
 	cmd.Env = append(os.Environ(), "DOLT_CLI_PASSWORD="+config.Password)
+	setProcessGroup(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("querying connection count: %w (output: %s)", err, strings.TrimSpace(string(output)))
@@ -3627,6 +3648,7 @@ func moveDir(src, dest string) error {
 	// Cross-filesystem: copy then delete source
 	if runtime.GOOS == "windows" {
 		cmd := exec.Command("robocopy", src, dest, "/E", "/MOVE", "/R:1", "/W:1")
+		setProcessGroup(cmd)
 		if err := cmd.Run(); err != nil {
 			// robocopy returns 1 for success with copies
 			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() <= 7 {
@@ -3637,6 +3659,7 @@ func moveDir(src, dest string) error {
 		return nil
 	}
 	cmd := exec.Command("cp", "-a", src, dest)
+	setProcessGroup(cmd)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("copying directory: %w", err)
 	}
