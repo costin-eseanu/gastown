@@ -265,13 +265,18 @@ func runSlingFormula(ctx context.Context, args []string) error {
 	}
 	t := tmux.NewTmux()
 
-	// Dog sessions discover hooked work automatically via their sessionStart
-	// hook (gt prime --hook), so no nudge is needed. Critically, the targetPane
-	// for delayed dog sessions resolves to the CALLER's pane (the dispatcher),
-	// not the dog's pane — so NudgePane would inject text into the wrong
-	// session, interrupting the caller. (gt-ect)
+	// Dog sessions need a nudge sent to their session (not to the bare pane ID
+	// from StartDelayedSession, which is ambiguous on platforms where tmux pane
+	// IDs are not globally unique). Use NudgeSession which qualifies the target
+	// with the session name. (gt-ect)
 	if delayedDogInfo != nil {
-		fmt.Printf("%s Dog session started, will discover work via gt prime\n", style.Dim.Render("○"))
+		dogSession := fmt.Sprintf("hq-dog-%s", delayedDogInfo.DogName)
+		if err := t.NudgeSession(dogSession, prompt); err != nil {
+			fmt.Printf("%s Could not nudge dog %s: %v (will discover work via gt prime)\n",
+				style.Dim.Render("○"), delayedDogInfo.DogName, err)
+		} else {
+			fmt.Printf("%s Nudged dog %s\n", style.Bold.Render("▶"), delayedDogInfo.DogName)
+		}
 		return nil
 	}
 
