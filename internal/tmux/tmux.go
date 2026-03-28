@@ -1678,6 +1678,16 @@ func (t *Tmux) NudgeSessionWithOpts(session, message string, opts NudgeOpts) err
 	time.Sleep(adaptiveTextDelay(len(sanitized)))
 
 	if !opts.SkipEscape {
+		// Auto-skip Escape for Copilot CLI sessions. Escape cancels in-flight
+		// generation in Copilot CLI (like Gemini), leaving the nudge text
+		// stranded in the input field without Enter being processed. (hq-isz)
+		agentType, _ := t.GetEnvironment(session, "GT_AGENT")
+		if agentType == "copilot" {
+			opts.SkipEscape = true
+		}
+	}
+
+	if !opts.SkipEscape {
 		// 5. Send Escape to exit vim INSERT mode if enabled (harmless in normal mode)
 		// See: https://github.com/anthropics/gastown/issues/307
 		_, _ = t.run("send-keys", "-t", target, "Escape")
