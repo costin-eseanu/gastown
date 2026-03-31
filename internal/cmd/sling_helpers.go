@@ -31,15 +31,29 @@ import (
 // resolveBeadDir returns the directory to run bd commands for a given bead ID.
 // Uses prefix-based routing to find the correct rig directory.
 // Falls back to rigs.json prefix mapping, then town root.
-func resolveBeadDir(_ string) string {
-	// Always return town root. bd's own prefix routing (routes.jsonl at town
-	// level) handles dispatching to the correct rig database. Returning the
-	// rig path caused bd to discover rig-local .beads/ with broken nested
-	// routing, leading to "bead not found" errors for valid sc-/st-/etc IDs.
+func resolveBeadDir(beadID string) string {
 	townRoot, err := workspace.FindFromCwd()
 	if err != nil {
 		return "."
 	}
+
+	// Extract prefix from bead ID (e.g., "pl-49w" -> "pl-")
+	parts := strings.SplitN(beadID, "-", 2)
+	if len(parts) < 2 {
+		return townRoot
+	}
+	prefix := parts[0] + "-"
+
+	// HQ beads live at town root
+	if prefix == "hq-" {
+		return townRoot
+	}
+
+	// Look up rig directory from rigs.json for non-HQ beads
+	if rigDir := resolveBeadDirFromRigsJSON(townRoot, prefix); rigDir != "" {
+		return rigDir
+	}
+
 	return townRoot
 }
 
