@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -988,6 +990,18 @@ func TestParseConvoyListJSON(t *testing.T) {
 	}
 }
 
+// testSleepCommand returns a cross-platform command that sleeps for the given
+// number of seconds. On Unix it uses "sleep"; on Windows it uses PowerShell's
+// Start-Sleep since "sleep" is not a standard Windows command.
+func testSleepCommand(seconds float64) (gtPath string, args []string) {
+	if runtime.GOOS == "windows" {
+		ms := int(seconds * 1000)
+		return "powershell", []string{"-NoProfile", "-Command",
+			fmt.Sprintf("Start-Sleep -Milliseconds %d", ms)}
+	}
+	return "sleep", []string{fmt.Sprintf("%g", seconds)}
+}
+
 // TestRunGtCommandSemaphore verifies that runGtCommand limits concurrent
 // command execution via a semaphore. With a 1-slot semaphore and 3 commands
 // each sleeping 0.1s, total time must be >= 0.25s (serialized), proving the
@@ -995,9 +1009,11 @@ func TestParseConvoyListJSON(t *testing.T) {
 //
 // Regression test for steveyegge/gastown#1230 item 5.
 func TestRunGtCommandSemaphore(t *testing.T) {
+	sleepPath, sleepArgs := testSleepCommand(0.1)
+
 	// Create handler with a 1-slot semaphore — fully serialized execution.
 	h := &APIHandler{
-		gtPath:            "sleep",
+		gtPath:            sleepPath,
 		workDir:           t.TempDir(),
 		defaultRunTimeout: 5 * time.Second,
 		maxRunTimeout:     10 * time.Second,
@@ -1012,7 +1028,7 @@ func TestRunGtCommandSemaphore(t *testing.T) {
 	for i := 0; i < numCmds; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = h.runGtCommand(context.Background(), 2*time.Second, []string{"0.1"})
+			_, _ = h.runGtCommand(context.Background(), 10*time.Second, sleepArgs)
 		}()
 	}
 	wg.Wait()
