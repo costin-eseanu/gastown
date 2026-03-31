@@ -210,6 +210,93 @@ func TestCollectExistingMoleculesFiltersClosedMolecules(t *testing.T) {
 	}
 }
 
+// TestResolveBeadDirCrossRig verifies that resolveBeadDir routes bead IDs
+// to the correct rig directory based on prefix-based routing in routes.jsonl.
+// This is the fix for gt-4en: cross-rig sling operations failing with
+// "bead not found" because resolveBeadDir always returned the town root.
+func TestResolveBeadDirCrossRig(t *testing.T) {
+	townRoot := t.TempDir()
+
+	// Create workspace marker so FindFromCwd detects the town root.
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor"), 0755); err != nil {
+		t.Fatalf("mkdir mayor: %v", err)
+	}
+
+	// Create rig directories that routes point to.
+	planetsRig := filepath.Join(townRoot, "planets", "mayor", "rig")
+	if err := os.MkdirAll(planetsRig, 0755); err != nil {
+		t.Fatalf("mkdir planets rig: %v", err)
+	}
+	gastownRig := filepath.Join(townRoot, "gastown", "mayor", "rig")
+	if err := os.MkdirAll(gastownRig, 0755); err != nil {
+		t.Fatalf("mkdir gastown rig: %v", err)
+	}
+
+	// Create routes.jsonl in the town-level .beads/ directory.
+	beadsDir := filepath.Join(townRoot, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+	routesContent := `{"prefix":"hq-","path":"."}
+{"prefix":"gt-","path":"gastown/mayor/rig"}
+{"prefix":"pl-","path":"planets/mayor/rig"}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "routes.jsonl"), []byte(routesContent), 0644); err != nil {
+		t.Fatalf("write routes.jsonl: %v", err)
+	}
+
+	// Save and restore cwd.
+	origCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origCwd) })
+	if err := os.Chdir(townRoot); err != nil {
+		t.Fatalf("chdir to town root: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		beadID  string
+		wantDir string
+	}{
+		{
+			name:    "cross-rig bead resolves to rig path",
+			beadID:  "pl-49w",
+			wantDir: planetsRig,
+		},
+		{
+			name:    "local rig bead resolves to rig path",
+			beadID:  "gt-4en",
+			wantDir: gastownRig,
+		},
+		{
+			name:    "town-level bead resolves to town root",
+			beadID:  "hq-abc",
+			wantDir: townRoot,
+		},
+		{
+			name:    "unknown prefix falls back to town root",
+			beadID:  "zz-unknown",
+			wantDir: townRoot,
+		},
+		{
+			name:    "no prefix falls back to town root",
+			beadID:  "nohyphen",
+			wantDir: townRoot,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveBeadDir(tt.beadID)
+			if got != tt.wantDir {
+				t.Errorf("resolveBeadDir(%q) = %q, want %q", tt.beadID, got, tt.wantDir)
+			}
+		})
+	}
+}
+
 func TestIsSlingConfigError(t *testing.T) {
 	tests := []struct {
 		name string

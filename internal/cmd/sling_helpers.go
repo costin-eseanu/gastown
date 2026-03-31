@@ -29,7 +29,9 @@ import (
 )
 
 // resolveBeadDir returns the directory to run bd commands for a given bead ID.
-// Uses prefix-based routing to find the correct rig directory.
+// Uses prefix-based routing via routes.jsonl to find the correct rig directory,
+// so that cross-rig beads (e.g., pl-49w from the planets rig) are resolved
+// against their rig's database rather than only the town-level HQ database.
 // Falls back to rigs.json prefix mapping, then town root.
 func resolveBeadDir(beadID string) string {
 	townRoot, err := workspace.FindFromCwd()
@@ -37,21 +39,18 @@ func resolveBeadDir(beadID string) string {
 		return "."
 	}
 
-	// Extract prefix from bead ID (e.g., "pl-49w" -> "pl-")
-	parts := strings.SplitN(beadID, "-", 2)
-	if len(parts) < 2 {
-		return townRoot
-	}
-	prefix := parts[0] + "-"
-
-	// HQ beads live at town root
-	if prefix == "hq-" {
-		return townRoot
-	}
-
-	// Look up rig directory from rigs.json for non-HQ beads
-	if rigDir := resolveBeadDirFromRigsJSON(townRoot, prefix); rigDir != "" {
-		return rigDir
+	// Route to the correct rig directory based on the bead's prefix.
+	// Each prefix (e.g., "pl-", "gt-") maps to a rig path in routes.jsonl.
+	// Town-level prefixes (path=".") return townRoot unchanged.
+	prefix := beads.ExtractPrefix(beadID)
+	if prefix != "" {
+		if rigPath := beads.GetRigPathForPrefix(townRoot, prefix); rigPath != "" {
+			return rigPath
+		}
+		// Fall back to rigs.json for rigs not yet in routes.jsonl.
+		if rigPath := resolveBeadDirFromRigsJSON(townRoot, prefix); rigPath != "" {
+			return rigPath
+		}
 	}
 
 	return townRoot
