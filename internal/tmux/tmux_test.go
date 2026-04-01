@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -2256,5 +2257,78 @@ func TestValidateCommandBinary(t *testing.T) {
 				t.Errorf("validateCommandBinary(%q) error = %v, wantErr = %v", tc.cmd, err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestSendCommandViaScript_WritesScript(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("sendCommandViaScript is Windows-only")
+	}
+	tm := newTestTmux(t)
+	sessionName := "gt-test-script-" + fmt.Sprintf("%d", time.Now().UnixNano()%10000)
+
+	_ = tm.KillSession(sessionName)
+	if err := tm.NewSession(sessionName, ""); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer func() { _ = tm.KillSession(sessionName) }()
+
+	// Command with embedded newlines (simulates beacon prompt with \n\n)
+	command := "$env:GT_ROLE='gastown/witness'; claude -p '[GAS TOWN] witness\n\nRun gt prime'"
+
+	// Set GT_ROOT so sendCommandViaScript can find script dir
+	origRoot := os.Getenv("GT_ROOT")
+	tmpDir := t.TempDir()
+	os.Setenv("GT_ROOT", tmpDir)
+	defer os.Setenv("GT_ROOT", origRoot)
+
+	err := tm.sendCommandViaScript(sessionName, command)
+	if err != nil {
+		t.Fatalf("sendCommandViaScript: %v", err)
+	}
+
+	// Verify script was created
+	scriptDir := filepath.Join(tmpDir, "daemon", "scripts")
+	entries, err := os.ReadDir(scriptDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected script file to be created")
+	}
+
+	// Read the script content
+	scriptPath := filepath.Join(scriptDir, entries[0].Name())
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	// Verify the script contains the full command (including newlines)
+	if !strings.Contains(string(content), "GT_ROLE") {
+		t.Errorf("script should contain GT_ROLE, got: %s", content)
+	}
+	if !strings.Contains(string(content), "GAS TOWN") {
+		t.Errorf("script should contain beacon text, got: %s", content)
+	}
+}
+
+func TestPsQuoteValue(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"simple", "'simple'"},
+		{"with space", "'with space'"},
+		{"it's", "'it''s'"},
+		{"path\\to\\file", "'path\\to\\file'"},
+		{"", "''"},
+	}
+	for _, tc := range tests {
+		got := psQuoteValue(tc.input)
+		if got != tc.want {
+			t.Errorf("psQuoteValue(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
