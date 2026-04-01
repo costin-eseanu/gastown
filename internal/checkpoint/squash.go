@@ -111,7 +111,7 @@ func SquashWIPCommits(workDir, baseRef string) (int, error) {
 func gitOutput(workDir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = workDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 
 	out, err := cmd.Output()
 	if err != nil {

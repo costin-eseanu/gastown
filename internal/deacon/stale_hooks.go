@@ -158,7 +158,7 @@ func ScanStaleHooks(townRoot string, cfg *StaleHookConfig) (*StaleHookScanResult
 func listHookedBeads(townRoot string) ([]*HookedBead, error) {
 	cmd := exec.Command("bd", "list", "--status=hooked", "--json", "--flat", "--limit=0")
 	cmd.Dir = townRoot
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -254,6 +254,6 @@ func assigneeToWorktreePath(townRoot, assignee string) string {
 func unhookBead(townRoot, beadID string) error {
 	cmd := exec.Command("bd", "update", beadID, "--status=open")
 	cmd.Dir = townRoot
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	return cmd.Run()
 }

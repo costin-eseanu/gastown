@@ -334,7 +334,7 @@ func resolveRigFromBead(townRoot, beadID string) string {
 func getBeadStatusForRedispatch(townRoot, beadID string) string {
 	cmd := exec.Command("bd", "show", beadID, "--json")
 	cmd.Dir = townRoot
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -354,7 +354,7 @@ func getBeadStatusForRedispatch(townRoot, beadID string) string {
 func slingBead(townRoot, beadID, rig string) error {
 	cmd := exec.Command("gt", "sling", beadID, rig, "--force", "--no-convoy")
 	cmd.Dir = townRoot
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -385,7 +385,7 @@ Please investigate and either:
 
 	cmd := exec.Command("gt", "mail", "send", "mayor/", "-s", subject, "-m", body)
 	cmd.Dir = townRoot
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	return cmd.Run()
 }
 

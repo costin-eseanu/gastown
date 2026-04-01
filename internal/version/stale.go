@@ -85,7 +85,7 @@ func CheckStaleBinary(repoDir string) *StaleBinaryInfo {
 	// Get repo HEAD
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = repoDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	output, err := cmd.Output()
 	if err != nil {
 		info.Error = fmt.Errorf("cannot get repo HEAD: %w", err)
@@ -96,7 +96,7 @@ func CheckStaleBinary(repoDir string) *StaleBinaryInfo {
 	// Check which branch the repo is on
 	branchCmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
 	branchCmd.Dir = repoDir
-	util.SetProcessGroup(branchCmd)
+	util.SetDetachedProcessGroup(branchCmd)
 	if branchOutput, err := branchCmd.Output(); err == nil {
 		branch := strings.TrimSpace(string(branchOutput))
 		info.OnMainBranch = (branch == "main" || branch == "master")
@@ -131,13 +131,13 @@ func CheckStaleBinary(repoDir string) *StaleBinaryInfo {
 		// a crash loop when a crew worktree's HEAD was behind the binary's commit.
 		ancestorCmd := exec.Command("git", "merge-base", "--is-ancestor", info.BinaryCommit, "HEAD")
 		ancestorCmd.Dir = repoDir
-		util.SetProcessGroup(ancestorCmd)
+		util.SetDetachedProcessGroup(ancestorCmd)
 		info.IsForward = ancestorCmd.Run() == nil
 
 		// Try to count commits between binary and HEAD
 		countCmd := exec.Command("git", "rev-list", "--count", info.BinaryCommit+"..HEAD")
 		countCmd.Dir = repoDir
-		util.SetProcessGroup(countCmd)
+		util.SetDetachedProcessGroup(countCmd)
 		if countOutput, err := countCmd.Output(); err == nil {
 			if count, parseErr := fmt.Sscanf(strings.TrimSpace(string(countOutput)), "%d", &info.CommitsBehind); parseErr != nil || count != 1 {
 				info.CommitsBehind = 0
@@ -186,7 +186,7 @@ func GetRepoRoot() (string, error) {
 
 	// Fall back to current directory's git repo (may be a crew rig)
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	if output, err := cmd.Output(); err == nil {
 		root := strings.TrimSpace(string(output))
 		if hasGtSource(root) {
@@ -201,7 +201,7 @@ func GetRepoRoot() (string, error) {
 func isGitRepo(dir string) bool {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
 	cmd.Dir = dir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	return cmd.Run() == nil
 }
 
@@ -221,7 +221,7 @@ func onlyBeadsChanges(repoDir, binaryCommit string) bool {
 	// If this produces no output, all changes are within .beads/
 	cmd := exec.Command("git", "diff", "--name-only", binaryCommit+"..HEAD", "--", ".", ":!.beads")
 	cmd.Dir = repoDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	output, err := cmd.Output()
 	if err != nil {
 		// Can't determine — be conservative, assume stale

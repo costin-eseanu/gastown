@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/tmux"
-	"github.com/steveyegge/gastown/internal/util"
 )
 
 // Common errors
@@ -368,7 +367,7 @@ type execCmdWrapper struct {
 
 func (c *execCmdWrapper) Output() ([]byte, error) {
 	cmd := exec.Command(c.name, c.args...) //nolint:gosec // G204: command args are controlled internally
-	util.SetProcessGroup(cmd)
+	setProcessGroup(cmd)
 	return cmd.Output()
 }
 

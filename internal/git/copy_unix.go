@@ -12,6 +12,6 @@ import (
 // permissions, timestamps, and all file attributes.
 func copyDirPreserving(src, dest string) error {
 	cmd := exec.Command("cp", "-a", src, dest)
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	return cmd.Run()
 }

@@ -654,7 +654,7 @@ func (m *Model) nudgeSelected() (tea.Model, tea.Cmd) {
 	// Run gt nudge with proper target format
 	target := nudgeTarget(agent)
 	c := exec.Command("gt", "nudge", target, "continue")
-	util.SetProcessGroup(c)
+	util.SetDetachedProcessGroup(c)
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
 		// Refresh problems after nudge
 		return problemsTickMsg{}
@@ -670,7 +670,7 @@ func (m *Model) handoffSelected() (tea.Model, tea.Cmd) {
 	// Run gt nudge with proper target format
 	target := nudgeTarget(agent)
 	c := exec.Command("gt", "nudge", target, "handoff")
-	util.SetProcessGroup(c)
+	util.SetDetachedProcessGroup(c)
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
 		return problemsTickMsg{}
 	})

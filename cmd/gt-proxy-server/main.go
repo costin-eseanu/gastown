@@ -157,7 +157,7 @@ func main() {
 // unavailable or returns empty output.
 func discoverAllowedSubcmds() string {
 	cmd := exec.Command("gt", "proxy-subcmds")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		slog.Debug("gt proxy-subcmds discovery failed, using built-in default", "err", err)

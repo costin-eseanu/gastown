@@ -11,7 +11,7 @@ import (
 // loadAverage1Sysctl returns the 1-minute load average via sysctl on macOS.
 func loadAverage1Sysctl() float64 {
 	cmd := exec.Command("sysctl", "-n", "vm.loadavg")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return 0
@@ -34,7 +34,7 @@ func loadAverage1Sysctl() float64 {
 // Uses vm_stat to get free + inactive pages. Returns 0 if unavailable.
 func availableMemoryGB() float64 {
 	cmd := exec.Command("vm_stat")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return 0
@@ -52,7 +52,7 @@ func availableMemoryGB() float64 {
 	// macOS page size is 16384 on Apple Silicon, 4096 on Intel
 	pageSize := uint64(16384) // conservative default for M-series
 	pageSizeCmd := exec.Command("sysctl", "-n", "hw.pagesize")
-	util.SetProcessGroup(pageSizeCmd)
+	util.SetDetachedProcessGroup(pageSizeCmd)
 	out2, err := pageSizeCmd.Output()
 	if err == nil {
 		if ps, err := strconv.ParseUint(strings.TrimSpace(string(out2)), 10, 64); err == nil {

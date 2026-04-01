@@ -283,7 +283,7 @@ func LoadRigTrustProfile(doltPath, forkDir, handle string) (RigTrustProfile, err
 func runTrustQuery(doltPath, forkDir, query string) ([][]string, error) {
 	cmd := exec.Command(doltPath, "sql", "-r", "csv", "-q", query)
 	cmd.Dir = forkDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("dolt sql: %w", err)

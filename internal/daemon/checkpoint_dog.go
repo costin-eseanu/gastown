@@ -164,7 +164,7 @@ func (d *Daemon) checkpointWorktree(workDir, rigName, polecatName string) bool {
 func runGitCmd(workDir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = workDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

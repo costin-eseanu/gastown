@@ -109,7 +109,7 @@ func listConvoys(beadsDir, status string) ([]convoyListItem, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bd", listArgs...) //nolint:gosec // G204: args are constructed internally
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	cmd.Dir = beadsDir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -408,7 +408,7 @@ func listMQBeads(rigPath, status string) []mqListItem {
 		"--status="+status,
 		"--json",
 	)
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	cmd.Dir = rigPath
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout

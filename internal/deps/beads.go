@@ -47,7 +47,7 @@ func CheckBeads() (BeadsStatus, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bd", "version")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	output, err := cmd.Output()
 	if err != nil {
 		return BeadsUnknown, ""
@@ -101,7 +101,7 @@ func installBeads() error {
 	fmt.Printf("   beads (bd) not found. Installing...\n")
 
 	cmd := exec.Command("go", "install", BeadsInstallPath)
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	cmd.Env = appendGOBIN(cmd.Environ())
 	output, err := cmd.CombinedOutput()
 	if err != nil {

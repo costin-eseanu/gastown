@@ -171,7 +171,7 @@ func ExtractEpicPrefix(epicID string) string {
 // getGitUserName returns the git user.name config value, or empty if not set.
 func getGitUserName() string {
 	cmd := exec.Command("git", "config", "user.name")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

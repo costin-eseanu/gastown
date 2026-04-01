@@ -129,7 +129,7 @@ func (d *Daemon) dispatchReaperDog(vars map[string]string) error {
 
 	cmd := exec.Command("gt", args...)
 	cmd.Dir = d.config.TownRoot
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("gt sling: %w", err)
 	}

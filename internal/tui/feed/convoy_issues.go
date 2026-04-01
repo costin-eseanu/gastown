@@ -28,7 +28,7 @@ func getTrackedIssueStatus(beadsDir, convoyID string) []trackedStatus {
 
 	// Query tracked issues using bd dep list (returns full issue details)
 	cmd := exec.CommandContext(ctx, "bd", "dep", "list", convoyID, "-t", "tracks", "--json")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	cmd.Dir = beadsDir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -82,7 +82,7 @@ func refreshTrackedStatus(ctx context.Context, deps []struct {
 	args = append(args, "--json")
 
 	cmd := exec.CommandContext(ctx, "bd", args...)
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 

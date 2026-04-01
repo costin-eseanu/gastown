@@ -23,7 +23,7 @@ func copyDirPreserving(src, dest string) error {
 	// Note: robocopy returns exit code 1 for successful copy with files copied,
 	// so we only treat >= 8 as error (see robocopy documentation)
 	cmd := exec.Command("robocopy", src, dest, "/E", "/COPYALL", "/SL", "/R:0", "/W:0")
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	err := cmd.Run()
 	if err != nil {
 		// robocopy exit codes: 0-7 are success/warnings, >= 8 are errors

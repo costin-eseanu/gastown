@@ -343,6 +343,7 @@ func (t *Tmux) NewSessionWithCommand(name, workDir, command string) error {
 	// with long/multiline commands sent via send-keys (gt-ysp).
 	if runtime.GOOS == "windows" {
 		if err := t.sendCommandViaScript(name, command); err != nil {
+
 			_ = t.KillSession(name)
 			return fmt.Errorf("failed to send command in session %q: %w", name, err)
 		}
@@ -424,6 +425,7 @@ func (t *Tmux) NewSessionWithCommandAndEnv(name, workDir, command string, env ma
 	// Use script file on Windows to avoid unclosed-quote issues (gt-ysp).
 	if runtime.GOOS == "windows" {
 		if err := t.sendCommandViaScript(name, command); err != nil {
+
 			_ = t.KillSession(name)
 			return fmt.Errorf("failed to send command in session %q: %w", name, err)
 		}
@@ -1014,6 +1016,7 @@ func (t *Tmux) HasSession(name string) (bool, error) {
 		// string matching. Treat ANY has-session error as "not found" since
 		// the command only has two outcomes: exists (exit 0) or doesn't (exit 1).
 		return false, nil
+
 	}
 	return true, nil
 }
@@ -2417,6 +2420,12 @@ func (t *Tmux) SetGlobalEnvironment(key, value string) error {
 	return err
 }
 
+// UnsetGlobalEnvironment removes an environment variable from the tmux global environment.
+func (t *Tmux) UnsetGlobalEnvironment(key string) error {
+	_, err := t.run("set-environment", "-g", "-u", key)
+	return err
+}
+
 // GetGlobalEnvironment gets an environment variable from the tmux global environment.
 func (t *Tmux) GetGlobalEnvironment(key string) (string, error) {
 	out, err := t.run("show-environment", "-g", key)
@@ -3204,6 +3213,7 @@ func (t *Tmux) RespawnPane(pane, command string) error {
 			return err
 		}
 		return t.sendCommandViaScript(pane, command)
+
 	}
 	_, err := t.run("respawn-pane", "-k", "-t", pane, command)
 	return err
@@ -3224,6 +3234,7 @@ func (t *Tmux) RespawnPaneWithWorkDir(pane, workDir, command string) error {
 			fullCmd = fmt.Sprintf("Set-Location %s; %s", psQuoteValue(workDir), command)
 		}
 		return t.sendCommandViaScript(pane, fullCmd)
+
 	}
 	args := []string{"respawn-pane", "-k", "-t", pane}
 	if workDir != "" {
@@ -3275,6 +3286,7 @@ func (t *Tmux) sendCommandViaScript(pane, command string) error {
 	_, err := t.run("send-keys", "-t", pane, invocation, "Enter")
 	return err
 }
+
 
 // ClearHistory clears the scrollback history buffer for a pane.
 // This resets copy-mode display from [0/N] to [0/0].

@@ -181,7 +181,7 @@ func parseTrackedPID(value string) (trackedPID, error) {
 // the call will fail and callers degrade gracefully to PID-only tracking.
 func processStartTime(pid int) (string, error) {
 	cmd := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid))
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {

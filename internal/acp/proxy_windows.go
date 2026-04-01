@@ -20,7 +20,7 @@ func signalsToHandle() []os.Signal {
 // window that Windows creates for console-subsystem children spawned from a
 // GUI/no-console parent (e.g. the daemon).
 func (p *Proxy) setupProcessGroup() {
-	util.SetProcessGroup(p.cmd)
+	util.SetDetachedProcessGroup(p.cmd)
 }
 
 // isProcessAlive checks if the agent process is still running.

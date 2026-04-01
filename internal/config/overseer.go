@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/steveyegge/gastown/internal/util"
+
 )
 
 // OverseerConfig represents the human operator's identity (mayor/overseer.json).
@@ -126,7 +126,8 @@ func detectFromGitConfig(dir string) *OverseerConfig {
 	// Try to get user.name
 	nameCmd := exec.Command("git", "config", "user.name")
 	nameCmd.Dir = dir
-	util.SetProcessGroup(nameCmd)
+
+
 	nameOut, err := nameCmd.Output()
 	if err != nil {
 		return nil
@@ -146,7 +147,8 @@ func detectFromGitConfig(dir string) *OverseerConfig {
 	// Try to get user.email (optional)
 	emailCmd := exec.Command("git", "config", "user.email")
 	emailCmd.Dir = dir
-	util.SetProcessGroup(emailCmd)
+
+
 	if emailOut, err := emailCmd.Output(); err == nil {
 		config.Email = strings.TrimSpace(string(emailOut))
 	}
@@ -164,7 +166,8 @@ func detectFromGitConfig(dir string) *OverseerConfig {
 // detectFromGitHub attempts to get identity from GitHub CLI.
 func detectFromGitHub() *OverseerConfig {
 	cmd := exec.Command("gh", "api", "user", "--jq", ".login + \"|\" + .name + \"|\" + .email")
-	util.SetProcessGroup(cmd)
+
+
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
@@ -203,7 +206,8 @@ func detectFromEnvironment() *OverseerConfig {
 	if username == "" {
 		// Try whoami as last resort
 		cmd := exec.Command("whoami")
-		util.SetProcessGroup(cmd)
+	
+
 		if out, err := cmd.Output(); err == nil {
 			username = strings.TrimSpace(string(out))
 		}

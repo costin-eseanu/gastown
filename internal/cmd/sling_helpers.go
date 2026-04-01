@@ -29,31 +29,31 @@ import (
 )
 
 // resolveBeadDir returns the directory to run bd commands for a given bead ID.
-// Uses prefix-based routing via routes.jsonl to find the correct rig directory,
-// so that cross-rig beads (e.g., pl-49w from the planets rig) are resolved
-// against their rig's database rather than only the town-level HQ database.
-// Falls back to rigs.json prefix mapping, then town root.
+// Uses prefix-based routing (routes.jsonl) to resolve the correct rig's .beads
+// directory and returns its parent as the working directory for bd.
+//
+// Background: beads v0.62 removed built-in multi-rig routing from bd — all bd
+// commands now operate on the local database only. Cross-rig resolution must
+// happen in gt before invoking bd, by setting the correct working directory
+// (and stripping BEADS_DIR). This function reads routes.jsonl from the town-level
+// .beads directory and resolves the bead's prefix to the owning rig.
+//
+// PR #3166 (steveyegge/gastown) will replace bd shell-outs with the Go module
+// Storage API, making this function unnecessary. Until then, this is the
+// routing bridge between gt and the routing-free bd CLI.
+
 func resolveBeadDir(beadID string) string {
 	townRoot, err := workspace.FindFromCwd()
 	if err != nil {
 		return "."
 	}
+	townBeadsDir := filepath.Join(townRoot, ".beads")
+	resolved := beads.ResolveBeadsDirForID(townBeadsDir, beadID)
+	// Return the parent of the .beads directory so bd discovers it naturally.
+	// For town-level beads this returns townRoot; for rig beads it returns
+	// the rig's mayor/rig directory (e.g., gastown/mayor/rig).
+	return filepath.Dir(resolved)
 
-	// Route to the correct rig directory based on the bead's prefix.
-	// Each prefix (e.g., "pl-", "gt-") maps to a rig path in routes.jsonl.
-	// Town-level prefixes (path=".") return townRoot unchanged.
-	prefix := beads.ExtractPrefix(beadID)
-	if prefix != "" {
-		if rigPath := beads.GetRigPathForPrefix(townRoot, prefix); rigPath != "" {
-			return rigPath
-		}
-		// Fall back to rigs.json for rigs not yet in routes.jsonl.
-		if rigPath := resolveBeadDirFromRigsJSON(townRoot, prefix); rigPath != "" {
-			return rigPath
-		}
-	}
-
-	return townRoot
 }
 
 // resolveBeadDirFromRigsJSON looks up the rig directory from rigs.json using prefix.
@@ -1154,6 +1154,9 @@ func loadRigCommandVars(townRoot, rig string) []string {
 	}
 	if mq.MergeStrategy != "" {
 		vars = append(vars, fmt.Sprintf("merge_strategy=%s", mq.MergeStrategy))
+	}
+	if mq.IsRequireReviewEnabled() {
+		vars = append(vars, "require_review=true")
 	}
 	return vars
 }

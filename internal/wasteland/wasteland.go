@@ -156,7 +156,7 @@ func CloneLocally(org, db, targetDir string) error {
 	}
 
 	cmd := exec.Command("dolt", "clone", remoteURL, targetDir)
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("dolt clone %s: %w (%s)", remoteURL, err, strings.TrimSpace(string(output)))
@@ -181,7 +181,7 @@ func RegisterRig(localDir string, handle, dolthubOrg, displayName, ownerEmail, g
 
 	cmd := exec.Command("dolt", "sql", "-q", sql)
 	cmd.Dir = localDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("inserting rig registration: %w (%s)", err, strings.TrimSpace(string(output)))
@@ -190,14 +190,14 @@ func RegisterRig(localDir string, handle, dolthubOrg, displayName, ownerEmail, g
 	// Stage and commit
 	addCmd := exec.Command("dolt", "add", ".")
 	addCmd.Dir = localDir
-	util.SetProcessGroup(addCmd)
+	util.SetDetachedProcessGroup(addCmd)
 	if output, err := addCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("dolt add: %w (%s)", err, strings.TrimSpace(string(output)))
 	}
 
 	commitCmd := exec.Command("dolt", "commit", "-m", fmt.Sprintf("Register rig: %s", handle))
 	commitCmd.Dir = localDir
-	util.SetProcessGroup(commitCmd)
+	util.SetDetachedProcessGroup(commitCmd)
 	output, err = commitCmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(output))
@@ -215,7 +215,7 @@ func RegisterRig(localDir string, handle, dolthubOrg, displayName, ownerEmail, g
 func PushToOrigin(localDir string) error {
 	cmd := exec.Command("dolt", "push", "origin", "main")
 	cmd.Dir = localDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("dolt push: %w (%s)", err, strings.TrimSpace(string(output)))
@@ -230,7 +230,7 @@ func AddUpstreamRemote(localDir, upstreamOrg, upstreamDB string) error {
 	// Check if upstream remote already exists
 	checkCmd := exec.Command("dolt", "remote", "-v")
 	checkCmd.Dir = localDir
-	util.SetProcessGroup(checkCmd)
+	util.SetDetachedProcessGroup(checkCmd)
 	output, err := checkCmd.CombinedOutput()
 	if err == nil {
 		for _, line := range strings.Split(string(output), "\n") {
@@ -242,7 +242,7 @@ func AddUpstreamRemote(localDir, upstreamOrg, upstreamDB string) error {
 
 	cmd := exec.Command("dolt", "remote", "add", "upstream", url)
 	cmd.Dir = localDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(output))

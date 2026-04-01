@@ -32,6 +32,7 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -543,14 +544,8 @@ func ensureDaemon(townRoot string) error {
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	// On Windows, fully detach child so it survives the parent's exit
-	// without flashing a visible console window.
-	if runtime.GOOS == "windows" {
-		const CREATE_NO_WINDOW = 0x08000000
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
-		}
-	}
+	util.SetDetachedProcessGroup(cmd)
+
 
 	if err := cmd.Start(); err != nil {
 		return err

@@ -328,7 +328,7 @@ func parseIntColumn(row []string, idx int) int {
 func runDoltQuery(doltPath, forkDir, query string) ([][]string, error) {
 	cmd := exec.Command(doltPath, "sql", "-r", "csv", "-q", query) //nolint:gosec // doltPath is a trusted internal binary
 	cmd.Dir = forkDir
-	util.SetProcessGroup(cmd)
+	util.SetDetachedProcessGroup(cmd)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

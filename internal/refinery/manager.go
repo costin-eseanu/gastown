@@ -649,7 +649,7 @@ func (m *Manager) notifyWorkerRejected(mr *MergeRequest, reason string) {
 	nudgeMsg := fmt.Sprintf("MR rejected: branch=%s issue=%s reason=%s — review feedback and resubmit with 'gt done'",
 		mr.Branch, mr.IssueID, reason)
 	nudgeCmd := exec.Command("gt", "nudge", target, nudgeMsg)
-	util.SetProcessGroup(nudgeCmd)
+	util.SetDetachedProcessGroup(nudgeCmd)
 	nudgeCmd.Dir = m.workDir
 	if err := nudgeCmd.Run(); err != nil {
 		log.Printf("warning: nudging worker about rejection for %s: %v", mr.IssueID, err)
