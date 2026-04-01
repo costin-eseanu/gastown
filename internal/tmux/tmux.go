@@ -339,9 +339,10 @@ func (t *Tmux) NewSessionWithCommand(name, workDir, command string) error {
 
 	// Replace the initial shell with the actual command.
 	// On Windows (psmux), respawn-pane doesn't support passing a command
-	// argument, so we use send-keys to type the command into the shell.
+	// argument, so we use a script file to avoid unclosed-quote issues
+	// with long/multiline commands sent via send-keys (gt-ysp).
 	if runtime.GOOS == "windows" {
-		if _, err := t.run("send-keys", "-t", name, command, "Enter"); err != nil {
+		if err := t.sendCommandViaScript(name, command); err != nil {
 			_ = t.KillSession(name)
 			return fmt.Errorf("failed to send command in session %q: %w", name, err)
 		}
@@ -420,8 +421,9 @@ func (t *Tmux) NewSessionWithCommandAndEnv(name, workDir, command string, env ma
 	_, _ = t.run("set-option", "-t", name, "remain-on-exit", "on")
 
 	// Replace the initial shell with the actual command.
+	// Use script file on Windows to avoid unclosed-quote issues (gt-ysp).
 	if runtime.GOOS == "windows" {
-		if _, err := t.run("send-keys", "-t", name, command, "Enter"); err != nil {
+		if err := t.sendCommandViaScript(name, command); err != nil {
 			_ = t.KillSession(name)
 			return fmt.Errorf("failed to send command in session %q: %w", name, err)
 		}
@@ -3196,12 +3198,12 @@ func (t *Tmux) SetMailClickBinding(session string) error {
 // The pane parameter should be a pane ID (e.g., "%0") or session:window.pane format.
 func (t *Tmux) RespawnPane(pane, command string) error {
 	if runtime.GOOS == "windows" {
-		// psmux: respawn-pane -k kills the process, then send-keys types the command.
+		// psmux: respawn-pane -k kills the process, then send command via script
+		// to avoid unclosed-quote issues with long/multiline commands (gt-ysp).
 		if _, err := t.run("respawn-pane", "-k", "-t", pane); err != nil {
 			return err
 		}
-		_, err := t.run("send-keys", "-t", pane, command, "Enter")
-		return err
+		return t.sendCommandViaScript(pane, command)
 	}
 	_, err := t.run("respawn-pane", "-k", "-t", pane, command)
 	return err
@@ -3215,14 +3217,13 @@ func (t *Tmux) RespawnPaneWithWorkDir(pane, workDir, command string) error {
 		if _, err := t.run("respawn-pane", "-k", "-t", pane); err != nil {
 			return err
 		}
-		// Change directory first if needed, then run command
+		// Prepend Set-Location if needed, then use script to avoid
+		// unclosed-quote issues with long/multiline commands (gt-ysp).
+		fullCmd := command
 		if workDir != "" {
-			cdCmd := fmt.Sprintf("Set-Location %s; %s", psQuoteValue(workDir), command)
-			_, err := t.run("send-keys", "-t", pane, cdCmd, "Enter")
-			return err
+			fullCmd = fmt.Sprintf("Set-Location %s; %s", psQuoteValue(workDir), command)
 		}
-		_, err := t.run("send-keys", "-t", pane, command, "Enter")
-		return err
+		return t.sendCommandViaScript(pane, fullCmd)
 	}
 	args := []string{"respawn-pane", "-k", "-t", pane}
 	if workDir != "" {
@@ -3236,6 +3237,43 @@ func (t *Tmux) RespawnPaneWithWorkDir(pane, workDir, command string) error {
 // psQuoteValue quotes a value for PowerShell single-quoted strings.
 func psQuoteValue(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// sendCommandViaScript writes a PowerShell command to a temp .ps1 script and
+// sends the script invocation via send-keys. This avoids issues where long
+// commands or commands containing newlines (e.g., beacon prompts with \n)
+// corrupt the PowerShell input when typed character-by-character by send-keys,
+// leaving unclosed quotes that stall autonomous agent operation (gt-ysp).
+//
+// The script approach means send-keys only types a short invocation like:
+//
+//	& 'C:\path\to\script.ps1'
+//
+// instead of the full multi-line command. This matches the approach already
+// used by BuildStartupCommand in loader.go for initial session creation.
+func (t *Tmux) sendCommandViaScript(pane, command string) error {
+	// Resolve script directory: prefer GT_ROOT/daemon/scripts, fall back to temp dir.
+	scriptDir := ""
+	if townRoot := os.Getenv("GT_ROOT"); townRoot != "" {
+		scriptDir = filepath.Join(townRoot, "daemon", "scripts")
+	} else if townRoot := os.Getenv("GT_TOWN_ROOT"); townRoot != "" {
+		scriptDir = filepath.Join(townRoot, "daemon", "scripts")
+	} else {
+		scriptDir = filepath.Join(os.TempDir(), "gt-scripts")
+	}
+	_ = os.MkdirAll(scriptDir, 0755)
+
+	// Use pane ID in filename to avoid collisions between concurrent respawns.
+	safePane := strings.ReplaceAll(strings.ReplaceAll(pane, "%", "pane"), ":", "-")
+	scriptPath := filepath.Join(scriptDir, fmt.Sprintf("respawn-%s.ps1", safePane))
+	if err := os.WriteFile(scriptPath, []byte(command+"\n"), 0644); err != nil {
+		// Fallback: send inline (may fail with newlines)
+		_, err2 := t.run("send-keys", "-t", pane, command, "Enter")
+		return err2
+	}
+	invocation := "& " + psQuoteValue(scriptPath)
+	_, err := t.run("send-keys", "-t", pane, invocation, "Enter")
+	return err
 }
 
 // ClearHistory clears the scrollback history buffer for a pane.
